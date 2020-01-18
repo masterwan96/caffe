@@ -1,5 +1,10 @@
-FROM ubuntu:14.04
-MAINTAINER caffe-maint@googlegroups.com
+FROM ubuntu:16.04
+MAINTAINER caffe-maint@goo
+glegroups.com
+# ENV HOME /root
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN sed -i "s|http://archive.ubuntu.com|http://mirrors.163.com|g" /etc/apt/sources.list && rm -Rf /var/lib/apt/lists/* && apt-get -y update && apt-get install -y fortunes
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -20,16 +25,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python-dev \
         python-numpy \
         python-pip \
+        python-setuptools \
         python-scipy && \
     rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip
 
 ENV CAFFE_ROOT=/opt/caffe
 WORKDIR $CAFFE_ROOT
 
 # FIXME: clone a specific git tag and use ARG instead of ENV once DockerHub supports this.
-ENV CLONE_TAG=master
+ENV CLONE_TAG=ssd
 
-RUN git clone -b ${CLONE_TAG} --depth 1 https://github.com/BVLC/caffe.git . && \
+RUN git clone -b ${CLONE_TAG} --depth 1 git@github.com:gttiankai/caffe.git . && \
     for req in $(cat python/requirements.txt) pydot; do pip install $req; done && \
     mkdir build && cd build && \
     cmake -DCPU_ONLY=1 .. && \
