@@ -1,6 +1,5 @@
 FROM ubuntu:16.04
-MAINTAINER caffe-maint@goo
-glegroups.com
+MAINTAINER caffe-maint@googlegroups.com
 # ENV HOME /root
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -36,7 +35,7 @@ WORKDIR $CAFFE_ROOT
 # FIXME: clone a specific git tag and use ARG instead of ENV once DockerHub supports this.
 ENV CLONE_TAG=ssd
 
-RUN git clone -b ${CLONE_TAG} --depth 1 git@github.com:gttiankai/caffe.git . && \
+RUN git clone -b ${CLONE_TAG} --depth 1 https://github.com/gttiankai/caffe.git . && \
     for req in $(cat python/requirements.txt) pydot; do pip install $req; done && \
     mkdir build && cd build && \
     cmake -DCPU_ONLY=1 .. && \

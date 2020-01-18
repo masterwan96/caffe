@@ -551,8 +551,7 @@ message LayerParameter {
 // Message that stores parameters used to apply transformation
 // to the data layer's data
 message TransformationParameter {
-  // For data pre-processing, we can do sim
-  ple scaling and subtracting the
+  // For data pre-processing, we can do simple scaling and subtracting the
   // data mean, if provided. Note that the mean subtraction is always carried
   // out before scaling.
   optional float scale = 1 [default = 1];
