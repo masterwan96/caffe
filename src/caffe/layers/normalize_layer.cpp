@@ -6,12 +6,12 @@
 namespace caffe {
 
 template <typename Dtype>
-void NormalizeLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
-      const vector<Blob<Dtype>*>& top) {
+void NormalizeLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype> *> &bottom,
+                                       const vector<Blob<Dtype> *> &top) {
   CHECK_GE(bottom[0]->num_axes(), 2)
       << "Number of axes of bottom blob must be >=2.";
-  buffer_.Reshape(1, bottom[0]->channels(),
-                   bottom[0]->height(), bottom[0]->width());
+  buffer_.Reshape(1, bottom[0]->channels(), bottom[0]->height(),
+                  bottom[0]->width());
   buffer_channel_.Reshape(1, bottom[0]->channels(), 1, 1);
   buffer_spatial_.Reshape(1, 1, bottom[0]->height(), bottom[0]->width());
   NormalizeParameter norm_param = this->layer_param().norm_param();
@@ -26,8 +26,8 @@ void NormalizeLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   int spatial_dim = bottom[0]->width() * bottom[0]->height();
   sum_channel_multiplier_.Reshape(1, channels, 1, 1);
   caffe_set(channels, Dtype(1), sum_channel_multiplier_.mutable_cpu_data());
-  sum_spatial_multiplier_.Reshape(
-      1, 1, bottom[0]->height(), bottom[0]->width());
+  sum_spatial_multiplier_.Reshape(1, 1, bottom[0]->height(),
+                                  bottom[0]->width());
   caffe_set(spatial_dim, Dtype(1), sum_spatial_multiplier_.mutable_cpu_data());
   channel_shared_ = norm_param.channel_shared();
   if (this->blobs_.size() > 0) {
@@ -39,7 +39,7 @@ void NormalizeLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     } else {
       this->blobs_[0].reset(new Blob<Dtype>(vector<int>(1, channels)));
     }
-    shared_ptr<Filler<Dtype> > scale_filler;
+    shared_ptr<Filler<Dtype>> scale_filler;
     if (norm_param.has_scale_filler()) {
       scale_filler.reset(GetFiller<Dtype>(norm_param.scale_filler()));
     } else {
@@ -61,20 +61,20 @@ void NormalizeLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 }
 
 template <typename Dtype>
-void NormalizeLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
-      const vector<Blob<Dtype>*>& top) {
+void NormalizeLayer<Dtype>::Reshape(const vector<Blob<Dtype> *> &bottom,
+                                    const vector<Blob<Dtype> *> &top) {
   CHECK_GE(bottom[0]->num_axes(), 2)
       << "Number of axes of bottom blob must be >=2.";
   top[0]->ReshapeLike(*bottom[0]);
-  buffer_.Reshape(1, bottom[0]->channels(),
-                   bottom[0]->height(), bottom[0]->width());
+  buffer_.Reshape(1, bottom[0]->channels(), bottom[0]->height(),
+                  bottom[0]->width());
   if (!across_spatial_) {
     norm_.Reshape(bottom[0]->num(), 1, bottom[0]->height(), bottom[0]->width());
   }
   int spatial_dim = bottom[0]->height() * bottom[0]->width();
   if (spatial_dim != sum_spatial_multiplier_.count()) {
-    sum_spatial_multiplier_.Reshape(
-        1, 1, bottom[0]->height(), bottom[0]->width());
+    sum_spatial_multiplier_.Reshape(1, 1, bottom[0]->height(),
+                                    bottom[0]->width());
     caffe_set(spatial_dim, Dtype(1),
               sum_spatial_multiplier_.mutable_cpu_data());
     buffer_spatial_.Reshape(1, 1, bottom[0]->height(), bottom[0]->width());
@@ -82,39 +82,78 @@ void NormalizeLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 }
 
 template <typename Dtype>
-void NormalizeLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
-    const vector<Blob<Dtype>*>& top) {
-  const Dtype* bottom_data = bottom[0]->cpu_data();
-  Dtype* top_data = top[0]->mutable_cpu_data();
-  const Dtype* scale = this->blobs_[0]->cpu_data();
-  Dtype* buffer_data = buffer_.mutable_cpu_data();
-  Dtype* norm_data = norm_.mutable_cpu_data();
+void NormalizeLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype> *> &bottom,
+                                        const vector<Blob<Dtype> *> &top) {
+  const Dtype *bottom_data = bottom[0]->cpu_data();
+  Dtype *top_data = top[0]->mutable_cpu_data();
+  const Dtype *scale = this->blobs_[0]->cpu_data();
+  Dtype *buffer_data = buffer_.mutable_cpu_data();
+  Dtype *norm_data = norm_.mutable_cpu_data();
   // add eps to avoid overflow
   caffe_set<Dtype>(norm_.count(), Dtype(eps_), norm_data);
-  const Dtype* sum_channel_multiplier = sum_channel_multiplier_.cpu_data();
-  const Dtype* sum_spatial_multiplier = sum_spatial_multiplier_.cpu_data();
+  const Dtype *sum_channel_multiplier = sum_channel_multiplier_.cpu_data();
+  const Dtype *sum_spatial_multiplier = sum_spatial_multiplier_.cpu_data();
+  // batch num
   int num = bottom[0]->num();
+  // c*h*w
   int dim = bottom[0]->count() / num;
+  // h*w
   int spatial_dim = bottom[0]->height() * bottom[0]->width();
+  // channel
   int channels = bottom[0]->channels();
   for (int n = 0; n < num; ++n) {
+    // x^2
     caffe_sqr<Dtype>(dim, bottom_data, buffer_data);
     if (across_spatial_) {
       // add eps to avoid overflow
-      norm_data[n] = pow(caffe_cpu_asum<Dtype>(dim, buffer_data)+eps_,
-                         Dtype(0.5));
+      norm_data[n] =
+          pow(caffe_cpu_asum<Dtype>(dim, buffer_data) + eps_, Dtype(0.5));
       caffe_cpu_scale<Dtype>(dim, Dtype(1.0 / norm_data[n]), bottom_data,
                              top_data);
     } else {
+      /**
+       * y=alpha*A*x+beta*y
+       * M: channel
+       * N: hw
+       * alpha = 1
+       * A = buffer_data(x^2) (c*hw)
+       * x = sum_channel_multiplier(channle*1, value=1)
+       * beta = 1
+       * norm_data 初始值为0
+       * lda = M = channel --> A 转置
+       * norm_data=1*buffer_data*sum_channel_multiplier+1*norm_data
+       * nom_data: (hw*1)
+       * 这里的norm_data相当于在channel维度上对元素进行了求平方和，
+       * 然后结果存在norm_data中（存了spatial_dim也就是height*width个）
+       * */
       caffe_cpu_gemv<Dtype>(CblasTrans, channels, spatial_dim, Dtype(1),
                             buffer_data, sum_channel_multiplier, Dtype(1),
                             norm_data);
-      // compute norm
+      /**
+       * norm_data = (norm_data) ^ (1/2)
+       * norm_data(hw*1)
+       * */
       caffe_powx<Dtype>(spatial_dim, norm_data, Dtype(0.5), norm_data);
       // scale the layer
+      /**
+       * C=alpha*A*B+beta*C
+       * M: channel
+       * N: spatial_dim(h*w hw)
+       * K: 1
+       * alpha: 1
+       * A: sum_channel_sumltiplier( 1*chanell  value=1)
+       * B: norm_data ( hw * 1)
+       * beta: 0
+       * C: buffer_data
+       * lda = K
+       * ldb = N
+       * A 和 B 都要做转置
+       * buffer_data (c * hw)
+       * */
       caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels, spatial_dim,
                             1, Dtype(1), sum_channel_multiplier, norm_data,
                             Dtype(0), buffer_data);
+      //
       caffe_div<Dtype>(dim, bottom_data, buffer_data, top_data);
       norm_data += spatial_dim;
     }
@@ -122,10 +161,29 @@ void NormalizeLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     if (channel_shared_) {
       caffe_scal<Dtype>(dim, scale[0], top_data);
     } else {
+      /**
+       * C=alpha*A*B+beta*C
+       * M: channels
+       * N: hw
+       * K: 1
+       * alpha:1
+       * A: scale (1)
+       * B: sum_spatial_multiplier(1*hw)
+       * beta : 0
+       * C: buffer_data
+       * lda = K = 1
+       * lab = N = hw
+       * B: 不转置
+       * C: hw
+       * buffer_data= scale*sum_spatial_multiplier
+       * 其中 buffer_data： channel*spatial_dim
+       * scale : channel
+       * sum_spatial_multiplier: 1*spatial_dim （元素都是1）
+       * 其实就是将scale复制spatial_dim遍，做成一张mask，以便后面element_wise的相乘
+       * */
       caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, channels, spatial_dim,
                             1, Dtype(1), scale, sum_spatial_multiplier,
-                            Dtype(0),
-                            buffer_data);
+                            Dtype(0), buffer_data);
       caffe_mul<Dtype>(dim, top_data, buffer_data, top_data);
     }
     bottom_data += dim;
@@ -134,19 +192,20 @@ void NormalizeLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 }
 
 template <typename Dtype>
-void NormalizeLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
-    const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
-  const Dtype* top_diff = top[0]->cpu_diff();
-  const Dtype* top_data = top[0]->cpu_data();
-  const Dtype* bottom_data = bottom[0]->cpu_data();
-  Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
-  const Dtype* scale = this->blobs_[0]->cpu_data();
-  const Dtype* norm_data = norm_.cpu_data();
-  Dtype* buffer_data = buffer_.mutable_cpu_data();
-  Dtype* buffer_channel = buffer_channel_.mutable_cpu_data();
-  Dtype* buffer_spatial = buffer_spatial_.mutable_cpu_data();
-  const Dtype* sum_channel_multiplier = sum_channel_multiplier_.cpu_data();
-  const Dtype* sum_spatial_multiplier = sum_spatial_multiplier_.cpu_data();
+void NormalizeLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype> *> &top,
+                                         const vector<bool> &propagate_down,
+                                         const vector<Blob<Dtype> *> &bottom) {
+  const Dtype *top_diff = top[0]->cpu_diff();
+  const Dtype *top_data = top[0]->cpu_data();
+  const Dtype *bottom_data = bottom[0]->cpu_data();
+  Dtype *bottom_diff = bottom[0]->mutable_cpu_diff();
+  const Dtype *scale = this->blobs_[0]->cpu_data();
+  const Dtype *norm_data = norm_.cpu_data();
+  Dtype *buffer_data = buffer_.mutable_cpu_data();
+  Dtype *buffer_channel = buffer_channel_.mutable_cpu_data();
+  Dtype *buffer_spatial = buffer_spatial_.mutable_cpu_data();
+  const Dtype *sum_channel_multiplier = sum_channel_multiplier_.cpu_data();
+  const Dtype *sum_spatial_multiplier = sum_spatial_multiplier_.cpu_data();
   int count = top[0]->count();
   int num = top[0]->num();
   int dim = count / num;
@@ -155,13 +214,14 @@ void NormalizeLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 
   // Propagate to param
   if (this->param_propagate_down_[0]) {
-    Dtype* scale_diff = this->blobs_[0]->mutable_cpu_diff();
+    Dtype *scale_diff = this->blobs_[0]->mutable_cpu_diff();
     if (channel_shared_) {
       scale_diff[0] +=
           caffe_cpu_dot<Dtype>(count, top_data, top_diff) / scale[0];
     } else {
       for (int n = 0; n < num; ++n) {
-        caffe_mul<Dtype>(dim, top_data+n*dim, top_diff+n*dim, buffer_data);
+        caffe_mul<Dtype>(dim, top_data + n * dim, top_diff + n * dim,
+                         buffer_data);
         caffe_cpu_gemv<Dtype>(CblasNoTrans, channels, spatial_dim, Dtype(1),
                               buffer_data, sum_spatial_multiplier, Dtype(0),
                               buffer_channel);
@@ -223,7 +283,6 @@ void NormalizeLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   }
 }
 
-
 #ifdef CPU_ONLY
 STUB_GPU(NormalizeLayer);
 #endif
@@ -231,4 +290,4 @@ STUB_GPU(NormalizeLayer);
 INSTANTIATE_CLASS(NormalizeLayer);
 REGISTER_LAYER_CLASS(Normalize);
 
-}  // namespace caffe
+} // namespace caffe
