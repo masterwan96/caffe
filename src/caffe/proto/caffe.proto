@@ -545,7 +545,7 @@ message LayerParameter {
   // add by lucas
   optional UpsampleParameter upsample_param = 149;
   optional ShuffleChannelParameter shuffle_channel_param = 164;
-  optional InterpParameter interp_param = 145;
+  optional InterpParameter interp_param = 165;
   optional ReLU6Parameter relu6_param = 100000;
 }
 
