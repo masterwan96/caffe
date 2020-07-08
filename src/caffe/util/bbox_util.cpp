@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include "boost/iterator/counting_iterator.hpp"
 
@@ -536,7 +537,11 @@ void DecodeBBoxes(
     vector<NormalizedBBox>* decode_bboxes) {
   CHECK_EQ(prior_bboxes.size(), prior_variances.size());
   CHECK_EQ(prior_bboxes.size(), bboxes.size());
+  ofstream fout;
+  fout.open("output-caffe-decode_bbox.txt");
+  
   int num_bboxes = prior_bboxes.size();
+  
   if (num_bboxes >= 1) {
     CHECK_EQ(prior_variances[0].size(), 4);
   }
@@ -545,8 +550,14 @@ void DecodeBBoxes(
     NormalizedBBox decode_bbox;
     DecodeBBox(prior_bboxes[i], prior_variances[i], code_type,
                variance_encoded_in_target, clip_bbox, bboxes[i], &decode_bbox);
+    fout << " decode_bboxe is " << decode_bbox.xmin()<<endl;
+    fout << " decode_bboxe is " << decode_bbox.xmax()<<endl;
+    fout << " decode_bboxe is " << decode_bbox.ymin()<<endl;
+    fout << " decode_bboxe is " << decode_bbox.ymax()<<endl;
     decode_bboxes->push_back(decode_bbox);
   }
+  fout << flush; 
+  fout.close();
 }
 
 void DecodeBBoxesAll(const vector<LabelBBox>& all_loc_preds,
